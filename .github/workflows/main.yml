@@ -1,0 +1,72 @@
+name: CI
+
+# Controls when the workflow will run
+on:
+  # Triggers the workflow on push or pull request events but only for the "main" branch
+  push:
+    branches:
+      -  main
+      -  test
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+# A workflow run is made up of one or more jobs that can run sequentially or in parallel
+jobs:
+  # This workflow contains a single job called "build"
+
+ CheckVersion:
+  name: Build Version Check
+  runs-on: ubuntu-latest
+
+  # Setting build timeout.
+  timeout-minutes: 2
+
+  # Ensure this job only runs on pull_request events
+  if: ${{ github.event_name == 'pull_request' }}
+
+  steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v2
+    
+    # Fetching Base and PR branch details
+    - name: Get PR details
+      run: |
+        BASE_BRANCH=$(jq --raw-output .pull_request.base.ref "$GITHUB_EVENT_PATH")
+        echo "Base branch: $BASE_BRANCH"
+
+        PR_BRANCH=$(jq --raw-output .pull_request.head.ref "$GITHUB_EVENT_PATH")
+        echo "PR branch: $PR_BRANCH"
+
+        # Export variables for later steps
+        echo "BASE_BRANCH=$BASE_BRANCH" >> $GITHUB_ENV
+        echo "PR_BRANCH=$PR_BRANCH" >> $GITHUB_ENV
+
+    # Retrieves the package version from Base branch
+    - name: Checkout base branch and get package.json version
+      run: |
+        git fetch origin $BASE_BRANCH
+        git checkout $BASE_BRANCH
+        BASE_PACKAGE_JSON=$(cat package.json)
+        BASE_VERSION=$(jq -r .version <<< "$BASE_PACKAGE_JSON")
+        echo "Base branch version: $BASE_VERSION"
+        echo "BASE_VERSION=$BASE_VERSION" >> $GITHUB_ENV
+
+    # Retrieves the package version from PR branch     
+    - name: Checkout PR branch and get package.json version
+      run: |
+        git fetch origin $PR_BRANCH
+        git checkout $PR_BRANCH
+        PR_PACKAGE_JSON=$(cat package.json)
+        PR_VERSION=$(jq -r .version <<< "$PR_PACKAGE_JSON")
+        echo "PR branch version: $PR_VERSION"
+        echo "PR_VERSION=$PR_VERSION" >> $GITHUB_ENV
+
+    # Compares the package version of both the branches and exits if they are same   
+    - name: Compare versions and send notification
+      run: |
+        if [[ "$BASE_VERSION" == "$PR_VERSION" ]]; then
+          echo "Versions are same, can't overwrite"
+          exit 1
+        else
+          echo "Proceeding"
+        fi
